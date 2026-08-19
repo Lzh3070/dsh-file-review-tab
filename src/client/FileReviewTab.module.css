@@ -1,0 +1,283 @@
+/* File-review sidebar tab styles. CSS-module scoped (no global selectors, no
+   chat-flow rules) and painted with the host's --dsw-alias-* design tokens so
+   the tab follows the app theme instead of imposing its own. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xs-13);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  flex: none;
+}
+
+.headerTitle {
+  font-weight: 600;
+}
+
+.refreshButton {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.refreshButton:hover:not(:disabled) {
+  background: var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.refreshButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.notice {
+  flex: none;
+  margin: 8px 10px 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.noticeSuccess {
+  color: var(--dsw-alias-state-success-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-success-primary) 35%, transparent);
+}
+
+.noticeError {
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 35%, transparent);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 0 16px;
+}
+
+.empty {
+  padding: 24px 12px;
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+}
+
+.turnGroup {
+  margin: 0 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--dsw-alias-markdown-code-block);
+}
+
+.turnHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 8px 0 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.turnTitle {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.liveBadge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--dsw-alias-state-warning-primary, #d9a13b);
+  background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #d9a13b) 14%, transparent);
+  white-space: nowrap;
+}
+
+.turnCount {
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+}
+
+.stats {
+  display: inline-flex;
+  gap: 6px;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.added {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.removed {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.actionButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 3px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.actionButton:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-border-l1);
+}
+
+.actionButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.buttonIcon {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.fileList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fileItem + .fileItem {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px 0 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.fileRow:hover {
+  background: color-mix(in srgb, var(--dsw-alias-border-l1) 55%, transparent);
+}
+
+.chevron {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  fill: none;
+  stroke: var(--dsw-alias-label-tertiary);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.12s ease;
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.fileName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.stateBadge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.badgeUndone {
+  color: var(--dsw-alias-state-warning-primary, #d9a13b);
+  background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #d9a13b) 14%, transparent);
+}
+
+.badgeMuted {
+  color: var(--dsw-alias-label-tertiary);
+  background: var(--dsw-alias-border-l1);
+}
+
+.badgeError {
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
+}
+
+.smallButton {
+  padding: 2px 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+  flex: none;
+}
+
+.smallButton:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-border-l1);
+}
+
+.smallButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.fileRow .smallButton:first-of-type {
+  margin-left: auto;
+}
+
+.diffWrap {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  overflow-x: auto;
+}
+
+.diffUnavailable {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.reviewDiff {
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+}
