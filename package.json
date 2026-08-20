@@ -1,7 +1,7 @@
 {
   "name": "dsh-file-review-tab",
   "description": "Review agent-produced file changes (line-level red/green diff + undo) both as a chat turn-tail row and as a dsh-better-sidebar tab; a port of left0ver's dsh-file-review.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "keywords": [
     "deepseek-harness",
     "dsh-plugin",
@@ -10,6 +10,10 @@
     "sidebar"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lzh3070/dsh-file-review-tab.git"
+  },
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
