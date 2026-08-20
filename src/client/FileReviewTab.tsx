@@ -64,6 +64,14 @@ function stateKey(turn: number, path: string): string {
   return `${turn}|${path}`
 }
 
+/** Deep-link scroll target: the turn group for whole-turn links, else the row. */
+interface PendingScroll {
+  /** File-row stateKey: the precise target and the section fallback. */
+  readonly rowKey: string
+  /** Turn number whose group tops the viewport for multi-file links. */
+  readonly turn: number | null
+}
+
 /** A change group is reversible only with complete contextual hunks. */
 function isReversible(file: SessionFileChange): boolean {
   return file.diffs.length > 0 && file.diffs.every(diff =>
@@ -192,18 +200,20 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
   const flatRef = useRef(flat)
   flatRef.current = flat
 
-  // Deep-link plumbing: file-row elements by stateKey for scrollIntoView,
-  // the last replayed meta reference, and a pending scroll target.
+  // Deep-link plumbing: file-row elements by stateKey and turn-group sections
+  // by turn number for scrollIntoView, the last replayed meta reference, and a
+  // pending scroll target.
   const rowRefs = useRef(new Map<string, HTMLLIElement>())
+  const turnRefs = useRef(new Map<number, HTMLElement>())
   const lastMetaRef = useRef<unknown>(undefined)
-  const pendingScrollRef = useRef<string | null>(null)
+  const pendingScrollRef = useRef<PendingScroll | null>(null)
 
   // Sidebar-tab deep link: the chat row's 审查 button (and per-file chips)
   // land here as `tab.meta.expandPaths`. A NEW meta reference replays the
   // expansion — merging into the user's own expanded set, never replacing it
-  // — and scrolls the first path's row into view. An unchanged reference
-  // (re-renders from unrelated sidebar state) never re-grabs the user's
-  // manual expand/collapse state.
+  // — and queues a scroll that lands the link's target at the top of the tab
+  // body. An unchanged reference (re-renders from unrelated sidebar state)
+  // never re-grabs the user's manual expand/collapse state.
   useEffect(() => {
     const meta = tab.meta
     if (meta === lastMetaRef.current) return
@@ -228,26 +238,40 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
       return next
     })
     const first = flatRef.current.find(item => matches(item))
-    pendingScrollRef.current = first === undefined ? null : stateKey(first.turn, first.path)
+    // Multi-path links (the 审查 button) target the turn group so the whole
+    // review leads the viewport; single-path links (a file chip) target that
+    // file's row. An unmatched link leaves nothing pending.
+    pendingScrollRef.current = first === undefined ? null : {
+      rowKey: stateKey(first.turn, first.path),
+      turn: paths.length > 1 ? first.turn : null,
+    }
   }, [tab.meta])
 
-  // Scroll to the deep-linked file row AFTER the expansion commit lands.
-  // Scrolling on the meta-arrival commit would race the diff bodies mounting
-  // one commit later (rows above the target growing push it out of view), so
-  // the scroll keys off `expanded` and runs twice: once immediately, once
-  // after a short delay that covers the expansion layout settling.
+  // Scroll the deep-linked target to the TOP of the tab body — aligning to
+  // the center left long reviews straddling the viewport, reading like a
+  // miss. Whole-turn links resolve to the turn group (its header first);
+  // single-file links to that file's row, which is also the fallback when
+  // the section is not mounted. The target stays pending while its element
+  // cannot be found (the session snapshot may still be streaming in), so
+  // `flatKey` re-arms the scroll once the rows mount, and `visible` defers
+  // it while the panel is still opening — a scrollIntoView into a hidden
+  // container is a silent no-op that would otherwise eat the link. The
+  // delayed second call covers the diff bodies mounting one layout pass
+  // after the expansion commit.
   useEffect(() => {
-    const key = pendingScrollRef.current
-    if (key === null) return
-    const element = rowRefs.current.get(key)
+    if (!visible) return
+    const pending = pendingScrollRef.current
+    if (pending === null) return
+    const element = (pending.turn !== null ? turnRefs.current.get(pending.turn) : undefined)
+      ?? rowRefs.current.get(pending.rowKey)
     if (element === undefined) return
     pendingScrollRef.current = null
-    const scroll = () => element.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    const scroll = () => element.scrollIntoView({ block: 'start', behavior: 'smooth' })
     scroll()
     const timer = window.setTimeout(scroll, 150)
     return () => window.clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded, tab.meta])
+  }, [visible, expanded, tab.meta, flatKey])
 
   const showNotice = useCallback((tone: Notice['tone'], text: string) => {
     noticeSeqRef.current += 1
@@ -391,7 +415,14 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     const turnKey = `turn:${turn.turn}`
     const turnBusy = busyKey === turnKey
     return (
-      <section key={turn.turn} className={css.turnGroup}>
+      <section
+        key={turn.turn}
+        ref={(element) => {
+          if (element === null) turnRefs.current.delete(turn.turn)
+          else turnRefs.current.set(turn.turn, element)
+        }}
+        className={css.turnGroup}
+      >
         <header className={css.turnHeader}>
           <span className={css.turnTitle}>{t('turn', { n: turn.turn })}</span>
           {turn.live && <span className={css.liveBadge}>{t('turnLive')}</span>}
