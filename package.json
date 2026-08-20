@@ -1,7 +1,7 @@
 {
   "name": "dsh-file-review-tab",
   "description": "Review agent-produced file changes (line-level red/green diff + undo) both as a chat turn-tail row and as a dsh-better-sidebar tab; a port of left0ver's dsh-file-review.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "keywords": [
     "deepseek-harness",
     "dsh-plugin",
@@ -41,6 +41,7 @@
     "lib/typert-descriptors.js",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
+    "docs/screenshot.png",
     "README.md"
   ],
   "dsh": {
