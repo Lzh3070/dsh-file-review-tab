@@ -14,10 +14,11 @@ import type { ISessions, SessionFace, SessionId } from '@deepseek-ai/dsh-client-
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   FileReviewAction, FileReviewFileState, FileReviewRequest, FileReviewResult,
+  RecordedMutation, RecordedRequest, RecordedResult,
 } from '../change-types.ts'
 import {
-  basename, deriveSessionChanges, resolveSessionPath,
-  type SessionFileChange, type TurnFileChanges,
+  basename, deriveSessionChanges, deriveSessionRoots, mergeRecordedTurns,
+  resolveSessionPath, type SessionFileChange, type TurnFileChanges,
 } from './session-changes.ts'
 import { summarizeDiffs, UnifiedDiff, type UnifiedDiffStats } from './UnifiedDiff.tsx'
 import { t } from './locales.ts'
@@ -44,6 +45,7 @@ export interface FileReviewTabProps {
 interface FileReviewRemote {
   status(request: FileReviewRequest): Promise<RemoteResult<FileReviewResult>>
   apply(request: FileReviewRequest): Promise<RemoteResult<FileReviewResult>>
+  recorded(request: RecordedRequest): Promise<RemoteResult<RecordedResult>>
 }
 
 interface Notice {
@@ -184,7 +186,47 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
   )
   const snapshot = useSyncExternalStore(subscribe, () => session?.getSnapshot() ?? null)
 
-  const turns = useMemo(() => deriveSessionChanges(snapshot), [snapshot])
+  // Code Mode (run_code) roots and their Host-recorded mutations: nested
+  // dispatches carry no reuseable views, so each root's file changes are
+  // fetched async and merged into the snapshot-derived turns below. The
+  // fetch re-arms on the root set (a new run_code turn) or a manual refresh.
+  const roots = useMemo(
+    () => (snapshot === null ? [] : deriveSessionRoots(snapshot)),
+    [snapshot],
+  )
+  const rootsKey = useMemo(
+    () => roots.map(root => root.rootCallId).join('|'),
+    [roots],
+  )
+  const [recorded, setRecorded] = useState<readonly RecordedMutation[]>(() => [])
+  useEffect(() => {
+    if (!visible || roots.length === 0) return
+    let active = true
+    const timer = window.setTimeout(() => {
+      const scope = sessions.scope(sessionId as SessionId)
+      const remote = scope?.get('remote.fileReview') as FileReviewRemote | undefined
+      if (scope === undefined || remote === undefined) { active = false; return }
+      remote.recorded({ rootCallIds: roots.map(root => root.rootCallId) })
+        .then((result) => {
+          if (!result.ok || !active) return
+          setRecorded(result.value.mutations)
+        })
+        .catch(() => {
+          // Transient fetch failure: keep the previous record; the next
+          // snapshot / refresh round retries.
+        })
+    }, 200)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, rootsKey, tick, sessions, sessionId])
+
+  const turns = useMemo(
+    () => mergeRecordedTurns(deriveSessionChanges(snapshot), roots, recorded),
+    [snapshot, roots, recorded],
+  )
   const flat = useMemo<FlatChange[]>(
     () => turns.flatMap(turn => turn.files.map(file => ({
       turn: turn.turn, path: file.path, diffs: file.diffs,
