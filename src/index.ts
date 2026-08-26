@@ -58,35 +58,40 @@ export function apply(ctx: Context): void {
   // 'tools/post-execute' lives in the host tool registry's Cordis event map,
   // outside this package's typed Events surface; the loose emitter cast keeps
   // the runtime contract (args are unknown-typed below) without inventing a
-  // dependency on the registry plugin's type package.
+  // dependency on the registry plugin's type package. ctx.effect owns the
+  // registration so fiber disposal (HMR / plugin disable) removes the
+  // listener — a leaked one would record every mutation twice.
   const emitter = ctx as unknown as {
-    on(event: string, listener: (exec: unknown, result: unknown, next: unknown) => unknown): unknown
+    on(event: string, listener: (exec: unknown, result: unknown, next: unknown) => unknown): () => void
   }
-  emitter.on('tools/post-execute', async (
-    execRaw: unknown,
-    resultRaw: unknown,
-    nextRaw: unknown,
-  ): Promise<PostExecuteDecision> => {
-    const exec = execRaw as PostExecuteCall
-    const result = resultRaw as PostExecuteResult
-    const next = nextRaw as PostExecuteNext
-    const decision = await next()
-    if (decision.kind !== 'accept') return decision
-    // Model-direct mutations are already reviewable through conversation views;
-    // only nested dispatches (run_code sub-calls) need host-side recording.
-    if (exec.parent === undefined || exec.agent === undefined) return decision
-    const value = result.value
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) return decision
-    const candidate = value as { path?: unknown; before?: unknown; after?: unknown }
-    if (typeof candidate.path !== 'string' || typeof candidate.after !== 'string') return decision
-    if (candidate.before !== null && typeof candidate.before !== 'string') return decision
-    service.recordMutation(exec.agent, {
-      rootCallId: String(exec.rootCallId ?? exec.callId),
-      name: exec.name,
-      path: candidate.path,
-      before: candidate.before ?? null,
-      after: candidate.after,
+  ctx.effect(() => {
+    const off = emitter.on('tools/post-execute', async (
+      execRaw: unknown,
+      resultRaw: unknown,
+      nextRaw: unknown,
+    ): Promise<PostExecuteDecision> => {
+      const exec = execRaw as PostExecuteCall
+      const result = resultRaw as PostExecuteResult
+      const next = nextRaw as PostExecuteNext
+      const decision = await next()
+      if (decision.kind !== 'accept') return decision
+      // Model-direct mutations are already reviewable through conversation views;
+      // only nested dispatches (run_code sub-calls) need host-side recording.
+      if (exec.parent === undefined || exec.agent === undefined) return decision
+      const value = result.value
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return decision
+      const candidate = value as { path?: unknown; before?: unknown; after?: unknown }
+      if (typeof candidate.path !== 'string' || typeof candidate.after !== 'string') return decision
+      if (candidate.before !== null && typeof candidate.before !== 'string') return decision
+      service.recordMutation(exec.agent, {
+        rootCallId: String(exec.rootCallId ?? exec.callId),
+        name: exec.name,
+        path: candidate.path,
+        before: candidate.before ?? null,
+        after: candidate.after,
+      })
+      return decision
     })
-    return decision
-  })
+    return () => { off() }
+  }, 'file-review-tab: ptc recorder')
 }

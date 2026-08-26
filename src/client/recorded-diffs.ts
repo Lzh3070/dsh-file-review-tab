@@ -121,7 +121,12 @@ export function diffsFromBeforeAfter(
     .filter(hunkEntry => hunkEntry.old.length > 0 || hunkEntry.new.length > 0)
     .map(hunkEntry => ({
       path,
-      oldText: hunkEntry.old.join('\n') || null,
+      // An empty old side (content written into a previously empty file) must
+      // stay '' — collapsing it to null would mislabel the hunk as a file
+      // creation and make it non-reversible, unlike its model-direct twin
+      // ('' + oldStart over the wire). Only the before === null entry above
+      // carries a null oldText.
+      oldText: hunkEntry.old.join('\n'),
       newText: hunkEntry.new.join('\n'),
       oldStart: hunkEntry.oldStart,
       newStart: hunkEntry.newStart,
