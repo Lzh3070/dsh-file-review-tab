@@ -46,3 +46,34 @@ export interface FileReviewResult {
   readonly files: readonly FileReviewFileResult[]
 }
 
+/**
+ * One mutation a Code Mode `run_code` program dispatched to a file-editing
+ * tool, captured host-side with the FULL before/after content. The wire views
+ * (diff cards) only ride model-direct tool/call frames; nested dispatches
+ * carry neither a view nor hunks, so review of programmatic edits must
+ * reconstruct the diff from these two snapshots instead.
+ */
+export interface RecordedMutation {
+  /** The `run_code` call that owns this dispatch (its `callId`). */
+  readonly rootCallId: string
+  /** The dispatched tool name (`edit`, `write`, …). */
+  readonly name: string
+  /** Display path the tool reported; resolved against the session cwd. */
+  readonly path: string
+  /** Full file content before the mutation; `null` when the file was created. */
+  readonly before: string | null
+  /** Full file content after the mutation. */
+  readonly after: string
+}
+
+/** Host request for the recorded Code Mode mutations of one session. */
+export interface RecordedRequest {
+  /** Root (`run_code`) call-ids whose recorded mutations are wanted. */
+  readonly rootCallIds: readonly string[]
+}
+
+/** Host response: every requested root's mutations, in dispatch order. */
+export interface RecordedResult {
+  readonly mutations: readonly RecordedMutation[]
+}
+

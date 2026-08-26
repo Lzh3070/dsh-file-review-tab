@@ -45,6 +45,34 @@ const resultCodec = {
   schema: resultSchema,
 }
 
+const recordedMutationSchema = z.object({
+  rootCallId: z.string(),
+  name: z.string(),
+  path: z.string(),
+  before: z.string().nullable(),
+  after: z.string(),
+})
+
+const recordedRequestSchema = z.object({
+  rootCallIds: z.array(z.string()),
+})
+
+const recordedResultSchema = z.object({
+  mutations: z.array(recordedMutationSchema),
+})
+
+const recordedRequestCodec = {
+  mode: 'strict' as const,
+  typeSymbol: `${PACKAGE_NAME}#RecordedRequest`,
+  schema: recordedRequestSchema,
+}
+
+const recordedResultCodec = {
+  mode: 'strict' as const,
+  typeSymbol: `${PACKAGE_NAME}#RecordedResult`,
+  schema: recordedResultSchema,
+}
+
 function descriptor(method: 'status' | 'apply'): InvocationDescriptor {
   return {
     id: `${PACKAGE_NAME}#fileReview/${method}`,
@@ -62,7 +90,25 @@ function descriptor(method: 'status' | 'apply'): InvocationDescriptor {
   }
 }
 
+function recordedDescriptor(): InvocationDescriptor {
+  return {
+    id: `${PACKAGE_NAME}#fileReview/recorded`,
+    service: 'fileReview',
+    namespace: 'fileReview',
+    method: 'recorded',
+    invocation: { kind: 'direct' },
+    scope: { context: 'agent', wire: 'agentId' },
+    parameters: [{
+      name: 'agent', wire: 'agentId', source: 'lookup', lookup: 'agent', codec: agentCodec,
+    }, {
+      name: 'request', wire: 'request', source: 'json', codec: recordedRequestCodec,
+    }],
+    result: recordedResultCodec,
+  }
+}
+
 export const FILE_REVIEW_INVOCATIONS: readonly InvocationDescriptor[] = [
   descriptor('status'),
   descriptor('apply'),
+  recordedDescriptor(),
 ]

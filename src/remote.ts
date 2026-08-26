@@ -2,7 +2,9 @@
 
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { RemoteResult, TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
-import type { FileReviewRequest, FileReviewResult } from './change-types.ts'
+import type {
+  FileReviewRequest, FileReviewResult, RecordedRequest, RecordedResult,
+} from './change-types.ts'
 import { FILE_REVIEW_INVOCATIONS, PACKAGE_NAME } from './typert-descriptors.ts'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -16,6 +18,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
         agentId: SessionId,
         request: FileReviewRequest,
       ) => Promise<RemoteResult<FileReviewResult>>
+      recorded: (
+        agentId: SessionId,
+        request: RecordedRequest,
+      ) => Promise<RemoteResult<RecordedResult>>
     }
   }
   interface TypertRemoteMap {
@@ -27,6 +33,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
       agentId: SessionId,
       request: FileReviewRequest,
     ) => Promise<RemoteResult<FileReviewResult>>
+    'fileReview/recorded': (
+      agentId: SessionId,
+      request: RecordedRequest,
+    ) => Promise<RemoteResult<RecordedResult>>
   }
   interface TypertRemoteScopeMap {
     'agent:fileReview/status': (
@@ -35,6 +45,9 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'agent:fileReview/apply': (
       request: FileReviewRequest,
     ) => Promise<RemoteResult<FileReviewResult>>
+    'agent:fileReview/recorded': (
+      request: RecordedRequest,
+    ) => Promise<RemoteResult<RecordedResult>>
   }
 }
 

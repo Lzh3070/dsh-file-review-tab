@@ -11,7 +11,8 @@
 import type {
   ConversationSnapshot, ToolResultNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ProducedFileDiff } from '../change-types.ts'
+import type { ProducedFileDiff, RecordedMutation } from '../change-types.ts'
+import { diffsFromBeforeAfter } from './recorded-diffs.ts'
 
 /** One changed file inside one turn, hunks appended in settlement order. */
 export interface SessionFileChange {
@@ -148,6 +149,91 @@ export function deriveSessionChanges(snapshot: ConversationSnapshot | null): Tur
   const derived = derive(snapshot)
   cache.set(snapshot, derived)
   return derived
+}
+
+/**
+ * One Code Mode (`run_code`) root visible in the snapshot, with the turn it
+ * settles into. Children (`subCalls`) carry no reusable views, so the reset of
+ * their review data arrives asynchronously from the Host recorder; these roots
+ * are the join keys (the `run_code` `callId` is the dispatch `rootCallId`).
+ */
+export interface SessionRoot {
+  readonly turn: number
+  readonly live: boolean
+  readonly rootCallId: string
+}
+
+/** Every `run_code` tool-result node in the window, in node order. */
+export function deriveSessionRoots(snapshot: ConversationSnapshot): SessionRoot[] {
+  const attribute = turnAttribution(snapshot)
+  const roots: SessionRoot[] = []
+  for (const node of snapshot.nodes) {
+    if (node.kind !== 'tool-result' || node.isError) continue
+    if (node.subCalls.length === 0) continue
+    const { turn, live } = attribute(node.seq)
+    roots.push({ turn, live, rootCallId: node.callId })
+  }
+  return roots
+}
+
+/**
+ * Merge Host-recorded Code Mode mutations into the snapshot-derived turns:
+ * hunks rebuilt from the full before/after are appended to the owning turn's
+ * file groups (same-path entries stay one row, hunks appended in dispatch
+ * order), so the tab's diff rendering, status inspection and undo all work on
+ * programmatic edits exactly like model-direct ones. All inputs are immutable;
+ * the result is a fresh array only when a recorded mutation matched a visible
+ * root.
+ */
+export function mergeRecordedTurns(
+  turns: readonly TurnFileChanges[],
+  roots: readonly SessionRoot[],
+  recorded: readonly RecordedMutation[],
+): readonly TurnFileChanges[] {
+  if (recorded.length === 0 || roots.length === 0) return turns
+  const rootTurns = new Map<string, { turn: number; live: boolean }>()
+  for (const root of roots) rootTurns.set(root.rootCallId, { turn: root.turn, live: root.live })
+  const byRoot = new Map<string, RecordedMutation[]>()
+  for (const mutation of recorded) {
+    const list = byRoot.get(mutation.rootCallId)
+    if (list === undefined) byRoot.set(mutation.rootCallId, [mutation])
+    else list.push(mutation)
+  }
+  let matched = false
+  for (const root of roots) {
+    if (byRoot.has(root.rootCallId)) { matched = true; break }
+  }
+  if (!matched) return turns
+
+  const groups = new Map<number, { live: boolean; files: Map<string, ProducedFileDiff[]> }>()
+  for (const turn of turns) {
+    const files = new Map<string, ProducedFileDiff[]>()
+    for (const file of turn.files) files.set(file.path, [...file.diffs])
+    groups.set(turn.turn, { live: turn.live, files })
+  }
+  for (const [rootCallId, mutations] of byRoot) {
+    const owner = rootTurns.get(rootCallId)
+    if (owner === undefined) continue
+    let group = groups.get(owner.turn)
+    if (group === undefined) {
+      group = { live: owner.live, files: new Map() }
+      groups.set(owner.turn, group)
+    }
+    for (const mutation of mutations) {
+      const diffs = diffsFromBeforeAfter(mutation.path, mutation.before, mutation.after)
+      if (diffs.length === 0) continue
+      const existing = group.files.get(mutation.path)
+      if (existing === undefined) group.files.set(mutation.path, [...diffs])
+      else existing.push(...diffs)
+    }
+  }
+  return [...groups.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([turn, group]) => ({
+      turn,
+      live: group.live,
+      files: [...group.files.entries()].map(([path, diffs]) => ({ path, diffs })),
+    }))
 }
 
 /** Count distinct changed paths across every turn (the sidebar badge count). */
