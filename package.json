@@ -45,7 +45,6 @@
     "lib/typert-descriptors.js",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
-    "docs/screenshot.png",
     "README.md"
   ],
   "dsh": {
