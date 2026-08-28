@@ -9,6 +9,11 @@
   min-height: 0;
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-xs-13);
+  /* Narrow-pane adaptation (issue #3): the workbench splits panes
+     horizontally and floats tabs as free windows, and at half width the
+     all-nowrap header rows overflow. Track own width so @container rules
+     below can let secondary content yield instead of clipping actions. */
+  container-type: inline-size;
 }
 
 .header {
@@ -92,6 +97,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Narrow panes wrap the undo action to its own row instead of clipping it
+     out of the pane (issue #3); row-gap keeps the wrapped line tight. */
+  flex-wrap: wrap;
+  row-gap: 4px;
   min-height: 34px;
   padding: 0 8px 0 10px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
@@ -289,4 +298,18 @@
   color: var(--dsw-alias-state-error-primary);
   background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
   white-space: nowrap;
+}
+
+/* Narrow panes (a horizontal split's half width, or a floated free window):
+   the turn header's inline +N/-N summary and the open-in-editor action are
+   the first to yield, so the undo action and the file names never clip
+   (issue #3). */
+@container (max-width: 430px) {
+  .turnHeader .stats {
+    display: none;
+  }
+
+  .editorButton {
+    display: none;
+  }
 }

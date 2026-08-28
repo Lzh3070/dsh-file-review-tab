@@ -556,7 +556,7 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
           {file.deleted !== true && (
             <button
               type="button"
-              className={css.smallButton}
+              className={`${css.smallButton} ${css.editorButton}`}
               onClick={(event) => {
                 event.stopPropagation()
                 openInEditor(file.path)
