@@ -47,8 +47,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /**
  * Required services: the sidebar registry, session snapshots, locale, remote,
- * the slot registry (turn-tail chain), and the conversation Definition
- * registry (per-turn deliverables accumulation).
+ * and the slot registry (turn-tail chain). The conversation Definition
+ * registry is deliberately NOT a static inject: its service name moved across
+ * dsh releases (<= 0.1.1: root `conversationEvents`; 0.1.2-alpha.1+:
+ * `uiConversation.events`), so a hard inject on either name leaves the whole
+ * plugin forever "pending" on the other version and fails web boot (issue
+ * #6). It is resolved dynamically in apply() instead.
  */
 export const inject = [
   'betterSidebar',
@@ -56,7 +60,6 @@ export const inject = [
   'locale',
   'remote',
   'slots',
-  'conversationEvents',
 ]
 
 /** The tab icon: a modest line-diff glyph drawn at the host-given size. */
@@ -117,6 +120,40 @@ function badgeCount(ctx: Context, sessionId: string): number | null {
 }
 
 /**
+ * The conversation Definition registry face this plugin needs: just the
+ * per-turn deliverables registration. Same shape on every dsh release — only
+ * the service path to reach it moved.
+ */
+interface ConversationDefinitionRegistry {
+  register(definition: typeof deliverablesDefinition): () => void
+}
+
+/**
+ * Resolve the conversation Definition registry without statically injecting
+ * it. dsh 0.1.2-alpha.1+ folds the old `conversationEvents` /
+ * `conversationViews` pair into a single `uiConversation` service (the
+ * registry is its `.events` property); dsh 0.1.1 and earlier expose it as the
+ * standalone root `conversationEvents` service. Returns undefined when the
+ * running dsh provides neither — the caller degrades instead of blocking.
+ */
+function resolveConversationEvents(ctx: Context): ConversationDefinitionRegistry | undefined {
+  const lookup = (name: string): unknown => {
+    // ctx.get() exists on newer cordis; ctx.reflect.get() is the documented
+    // "read a service without the inject requirement" escape hatch on both.
+    const anyCtx = ctx as unknown as { get?: (name: string) => unknown }
+    if (typeof anyCtx.get === 'function') return anyCtx.get(name)
+    return ctx.reflect.get(name)
+  }
+  const uiConversation = lookup('uiConversation') as
+    | { readonly events?: ConversationDefinitionRegistry | null }
+    | undefined
+  if (uiConversation?.events !== undefined && uiConversation.events !== null) return uiConversation.events
+  const conversationEvents = lookup('conversationEvents') as ConversationDefinitionRegistry | undefined
+  if (conversationEvents !== undefined && conversationEvents !== null) return conversationEvents
+  return undefined
+}
+
+/**
  * Client plugin body: attach locale, mount the Typert remote, register the
  * chat turn-tail row AND the sidebar tab.
  * @param ctx - client root context.
@@ -151,11 +188,26 @@ export function apply(ctx: Context): void {
 
   // The turn-local mutation accumulator both chat-side surfaces read: the
   // turn-tail row's select() and the prose-mention vocabulary derive from the
-  // 'deliverables' Turn data this Definition publishes.
-  ctx.effect(
-    () => ctx.conversationEvents.register(deliverablesDefinition),
-    'file-review-tab: deliverables definition',
-  )
+  // 'deliverables' Turn data this Definition publishes. Registered against
+  // whichever conversation registry the running dsh exposes (see
+  // resolveConversationEvents); re-registered when the owning service is
+  // (re-)provided or replaced, and skipped entirely on a dsh that exposes
+  // neither — the sidebar tab derives from session snapshots and keeps
+  // working without it.
+  let registeredOn: ConversationDefinitionRegistry | undefined
+  const registerDeliverables = (): void => {
+    const events = resolveConversationEvents(ctx)
+    if (events === undefined || events === registeredOn) return
+    registeredOn = events
+    ctx.effect(
+      () => events.register(deliverablesDefinition),
+      'file-review-tab: deliverables definition',
+    )
+  }
+  registerDeliverables()
+  ctx.on('internal/service', (name: string) => {
+    if (name === 'conversationEvents' || name === 'uiConversation') registerDeliverables()
+  })
 
   // The chat turn-tail row — the original dsh-file-review card, verbatim.
   // priority -2 runs BEFORE dsh-better-sidebar's -1 interception row: chain

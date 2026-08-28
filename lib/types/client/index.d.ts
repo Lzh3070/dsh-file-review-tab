@@ -25,8 +25,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 /**
  * Required services: the sidebar registry, session snapshots, locale, remote,
- * the slot registry (turn-tail chain), and the conversation Definition
- * registry (per-turn deliverables accumulation).
+ * and the slot registry (turn-tail chain). The conversation Definition
+ * registry is deliberately NOT a static inject: its service name moved across
+ * dsh releases (<= 0.1.1: root `conversationEvents`; 0.1.2-alpha.1+:
+ * `uiConversation.events`), so a hard inject on either name leaves the whole
+ * plugin forever "pending" on the other version and fails web boot (issue
+ * #6). It is resolved dynamically in apply() instead.
  */
 export declare const inject: string[];
 /**
