@@ -255,6 +255,7 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
   // pending scroll target.
   const rowRefs = useRef(new Map<string, HTMLLIElement>())
   const turnRefs = useRef(new Map<number, HTMLElement>())
+  const bodyRef = useRef<HTMLDivElement | null>(null)
   const lastMetaRef = useRef<unknown>(undefined)
   const pendingScrollRef = useRef<PendingScroll | null>(null)
 
@@ -304,10 +305,15 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
   // the section is not mounted. The target stays pending while its element
   // cannot be found (the session snapshot may still be streaming in), so
   // `flatKey` re-arms the scroll once the rows mount, and `visible` defers
-  // it while the panel is still opening — a scrollIntoView into a hidden
-  // container is a silent no-op that would otherwise eat the link. The
-  // delayed second call covers the diff bodies mounting one layout pass
-  // after the expansion commit.
+  // it while the panel is still opening. The delayed second call covers the
+  // diff bodies mounting one layout pass after the expansion commit.
+  //
+  // The scroll is computed and dispatched on the tab's OWN body only:
+  // element.scrollIntoView({ block: 'start' }) scrolls EVERY scrollable
+  // ancestor by specification, and in the sidebar panel that drags outer
+  // containers along — the panel's tab-strip header rides above the body
+  // inside one of them and gets scrolled out of view (issue #4). Manual
+  // container math can never move anything but this body.
   useEffect(() => {
     if (!visible) return
     const pending = pendingScrollRef.current
@@ -316,7 +322,12 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
       ?? rowRefs.current.get(pending.rowKey)
     if (element === undefined) return
     pendingScrollRef.current = null
-    const scroll = () => element.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    const scroll = () => {
+      const container = bodyRef.current
+      if (container === null) return
+      const delta = element.getBoundingClientRect().top - container.getBoundingClientRect().top
+      container.scrollTo({ top: container.scrollTop + delta - 8, behavior: 'smooth' })
+    }
     scroll()
     const timer = window.setTimeout(scroll, 150)
     return () => window.clearTimeout(timer)
@@ -623,7 +634,7 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
           {notice.text}
         </div>
       )}
-      <div className={css.body}>
+      <div className={css.body} ref={bodyRef}>
         {turns.length === 0
           ? <div className={css.empty}>{t('empty')}</div>
           : [...turns].reverse().map(renderTurn)}
