@@ -27,6 +27,9 @@ export declare const en: {
     'produced.redoError': string;
     'produced.noticeClose': string;
     'produced.noticeDismiss': string;
+    'produced.deleted': string;
+    'produced.deletedOne': string;
+    'produced.deletedAll': string;
     'review.title': string;
     'review.fileOne': string;
     'review.files': string;

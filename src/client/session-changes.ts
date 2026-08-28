@@ -12,12 +12,15 @@ import type {
   ConversationSnapshot, ToolResultNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ProducedFileDiff, RecordedMutation } from '../change-types.ts'
+import { deletedPaths } from './deleted-paths.ts'
 import { diffsFromBeforeAfter } from './recorded-diffs.ts'
 
 /** One changed file inside one turn, hunks appended in settlement order. */
 export interface SessionFileChange {
   readonly path: string
   readonly diffs: readonly ProducedFileDiff[]
+  /** Terminal commands deleted this path in this turn (display-only). */
+  readonly deleted?: true
 }
 
 /** One turn's produced files, in first-seen order. */
@@ -26,6 +29,12 @@ export interface TurnFileChanges {
   /** Whether the owning turn is still running (its change set may grow). */
   readonly live: boolean
   readonly files: readonly SessionFileChange[]
+}
+
+/** Internal per-path accumulator: hunk list plus the last deletion state. */
+interface FileAccumulator {
+  diffs: ProducedFileDiff[]
+  deleted?: true
 }
 
 /**
@@ -106,11 +115,15 @@ function turnAttribution(snapshot: ConversationSnapshot): (seq: number) => { tur
 /** Derive one session's per-turn produced-file changes (uncached core). */
 function derive(snapshot: ConversationSnapshot): TurnFileChanges[] {
   const attribute = turnAttribution(snapshot)
-  const byTurn = new Map<number, { live: boolean; files: Map<string, ProducedFileDiff[]> }>()
+  const byTurn = new Map<number, { live: boolean; files: Map<string, FileAccumulator> }>()
   for (const node of snapshot.nodes) {
     if (node.kind !== 'tool-result' || node.isError) continue
     const paths = producedPaths(node.callView)
-    if (paths.length === 0) continue
+    // dsh has no delete-file tool: deletions happen in the terminals, and a
+    // successful terminal call's literal rm-family arguments are the only
+    // record of them. They surface as hunk-less, non-undoable entries.
+    const deletions = paths.length === 0 ? deletedPaths(node.callView) : []
+    if (paths.length === 0 && deletions.length === 0) continue
     const diffs = reviewDiffs(node)
     const { turn, live } = attribute(node.seq)
     let group = byTurn.get(turn)
@@ -121,8 +134,16 @@ function derive(snapshot: ConversationSnapshot): TurnFileChanges[] {
     for (const path of paths) {
       const own = diffs.filter(diff => diff.path === path)
       const existing = group.files.get(path)
-      if (existing === undefined) group.files.set(path, [...own])
-      else existing.push(...own)
+      if (existing === undefined) group.files.set(path, { diffs: [...own] })
+      else {
+        existing.diffs.push(...own)
+        delete existing.deleted
+      }
+    }
+    for (const path of deletions) {
+      const existing = group.files.get(path)
+      if (existing === undefined) group.files.set(path, { diffs: [], deleted: true })
+      else existing.deleted = true
     }
   }
   return [...byTurn.entries()]
@@ -130,7 +151,11 @@ function derive(snapshot: ConversationSnapshot): TurnFileChanges[] {
     .map(([turn, group]) => ({
       turn,
       live: group.live,
-      files: [...group.files.entries()].map(([path, diffs]) => ({ path, diffs })),
+      files: [...group.files.entries()].map(([path, own]) => ({
+        path,
+        diffs: own.diffs,
+        ...(own.deleted === true ? { deleted: true as const } : {}),
+      })),
     }))
 }
 
@@ -205,10 +230,15 @@ export function mergeRecordedTurns(
   }
   if (!matched) return turns
 
-  const groups = new Map<number, { live: boolean; files: Map<string, ProducedFileDiff[]> }>()
+  const groups = new Map<number, { live: boolean; files: Map<string, FileAccumulator> }>()
   for (const turn of turns) {
-    const files = new Map<string, ProducedFileDiff[]>()
-    for (const file of turn.files) files.set(file.path, [...file.diffs])
+    const files = new Map<string, FileAccumulator>()
+    for (const file of turn.files) {
+      files.set(file.path, {
+        diffs: [...file.diffs],
+        ...(file.deleted === true ? { deleted: true as const } : {}),
+      })
+    }
     groups.set(turn.turn, { live: turn.live, files })
   }
   for (const [rootCallId, mutations] of byRoot) {
@@ -223,8 +253,8 @@ export function mergeRecordedTurns(
       const diffs = diffsFromBeforeAfter(mutation.path, mutation.before, mutation.after)
       if (diffs.length === 0) continue
       const existing = group.files.get(mutation.path)
-      if (existing === undefined) group.files.set(mutation.path, [...diffs])
-      else existing.push(...diffs)
+      if (existing === undefined) group.files.set(mutation.path, { diffs: [...diffs] })
+      else existing.diffs.push(...diffs)
     }
   }
   return [...groups.entries()]
@@ -232,7 +262,11 @@ export function mergeRecordedTurns(
     .map(([turn, group]) => ({
       turn,
       live: group.live,
-      files: [...group.files.entries()].map(([path, diffs]) => ({ path, diffs })),
+      files: [...group.files.entries()].map(([path, own]) => ({
+        path,
+        diffs: own.diffs,
+        ...(own.deleted === true ? { deleted: true as const } : {}),
+      })),
     }))
 }
 

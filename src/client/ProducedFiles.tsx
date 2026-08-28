@@ -214,10 +214,11 @@ export function ProducedFiles({
     ),
     [reviewsWithStats],
   )
-  const toggleFiles = useMemo(() => reviews.map(review => ({
-    path: review.path,
-    diffs: review.diffs,
-  })), [reviews])
+  // Deleted paths carry no hunks and cannot be inspected or toggled; they are
+  // display vocabulary on the chips only.
+  const toggleFiles = useMemo(() => reviews
+    .filter(review => review.deleted !== true)
+    .map(review => ({ path: review.path, diffs: review.diffs })), [reviews])
   const reversiblePaths = useMemo(() => new Set(reviews.filter(review =>
     review.diffs.length > 0 && review.diffs.every(diff =>
       diff.path === review.path
@@ -229,6 +230,9 @@ export function ProducedFiles({
   const shown = reviewsWithStats.slice(0, SHOWN_LIMIT)
   const hidden = reviewsWithStats.length - shown.length
   const allPaths = useMemo(() => reviews.map(review => review.path), [reviews])
+  // A turn that only deleted files reads as a deletion summary, not an edit.
+  const allDeleted = reviews.length > 0 && reviews.every(review => review.deleted === true)
+  const statsMatter = totalStats.added > 0 || totalStats.removed > 0
 
   const showToast = useCallback((notice: Omit<ToggleNotice, 'seq'>) => {
     toastSeqRef.current += 1
@@ -314,16 +318,22 @@ export function ProducedFiles({
           <span className={css.fileIconWrap}><FileIcon /></span>
           <div className={css.cardTitleBlock}>
             <span className={css.cardTitle}>
-              {reviews.length === 1
-                ? t('produced.editedOne')
-                : t('produced.edited', { count: String(reviews.length) })}
+              {allDeleted
+                ? (reviews.length === 1
+                  ? t('produced.deletedOne')
+                  : t('produced.deletedAll', { count: String(reviews.length) }))
+                : reviews.length === 1
+                  ? t('produced.editedOne')
+                  : t('produced.edited', { count: String(reviews.length) })}
             </span>
-            <Stats
-              stats={totalStats}
-              label={t('review.stats', {
-                added: String(totalStats.added), removed: String(totalStats.removed),
-              })}
-            />
+            {statsMatter && (
+              <Stats
+                stats={totalStats}
+                label={t('review.stats', {
+                  added: String(totalStats.added), removed: String(totalStats.removed),
+                })}
+              />
+            )}
           </div>
           <button
             type="button"
@@ -358,12 +368,16 @@ export function ProducedFiles({
               onClick={() => { openInSidebarTab?.([review.path], turnNumber) }}
             >
               <span className={css.fileName}>{basename(review.path)}</span>
-              <Stats
-                stats={stats}
-                label={t('review.stats', {
-                  added: String(stats.added), removed: String(stats.removed),
-                })}
-              />
+              {review.deleted === true
+                ? <span className={css.deletedBadge}>{t('produced.deleted')}</span>
+                : (
+                  <Stats
+                    stats={stats}
+                    label={t('review.stats', {
+                      added: String(stats.added), removed: String(stats.removed),
+                    })}
+                  />
+                )}
             </button>
           ))}
           {hidden > 0 && (

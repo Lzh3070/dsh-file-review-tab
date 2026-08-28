@@ -12,6 +12,8 @@ interface ProducedPath {
     readonly seq: number;
     readonly path: string;
     readonly diffs: readonly ProducedFileDiff[];
+    /** Terminal commands deleted this path in the same Turn (display-only). */
+    readonly deleted?: true;
 }
 /** Immutable produced-file facts published against one Turn. */
 export interface DeliverablesTurnData {

@@ -281,3 +281,12 @@
   border-radius: 0;
   margin: 0;
 }
+
+.deletedBadge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
+  white-space: nowrap;
+}

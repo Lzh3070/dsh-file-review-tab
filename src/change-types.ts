@@ -13,6 +13,13 @@ export interface ProducedFileDiff {
 export interface ProducedFileReview {
   readonly path: string
   readonly diffs: readonly ProducedFileDiff[]
+  /**
+   * The turn's terminal commands deleted this path (dsh has no delete-file
+   * tool, so deletions arrive as parsed rm-family arguments). Deleted entries
+   * carry no hunks, no undo, and no openable file — review-display vocabulary
+   * only.
+   */
+  readonly deleted?: true
 }
 
 /** Direction requested by the produced-files toggle. */

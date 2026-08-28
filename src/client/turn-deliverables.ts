@@ -9,6 +9,7 @@ import type {
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ProducedFileDiff, ProducedFileReview } from '../change-types.ts'
+import { deletedPaths } from './deleted-paths.ts'
 
 export type { ProducedFileDiff, ProducedFileReview } from '../change-types.ts'
 
@@ -16,6 +17,8 @@ interface ProducedPath {
   readonly seq: number
   readonly path: string
   readonly diffs: readonly ProducedFileDiff[]
+  /** Terminal commands deleted this path in the same Turn (display-only). */
+  readonly deleted?: true
 }
 
 /** Immutable produced-file facts published against one Turn. */
@@ -107,17 +110,25 @@ export function reviewsForClosing(
   seq = Number.POSITIVE_INFINITY,
 ): readonly ProducedFileReview[] {
   if (data === undefined) return []
-  const reviews: Array<{ path: string; diffs: ProducedFileDiff[] }> = []
-  const byPath = new Map<string, { path: string; diffs: ProducedFileDiff[] }>()
+  const reviews: Array<{ path: string; diffs: ProducedFileDiff[]; deleted?: true }> = []
+  const byPath = new Map<string, { path: string; diffs: ProducedFileDiff[]; deleted?: true }>()
   for (const produced of data.produced) {
     if (produced.seq > seq) continue
     const review = byPath.get(produced.path)
     if (review === undefined) {
-      const created = { path: produced.path, diffs: [...produced.diffs] }
+      const created = {
+        path: produced.path,
+        diffs: [...produced.diffs],
+        ...(produced.deleted === true ? { deleted: true as const } : {}),
+      }
       byPath.set(produced.path, created)
       reviews.push(created)
     } else {
       review.diffs.push(...produced.diffs)
+      // Last state wins: a deletion marks the entry, a later write (the file
+      // was recreated in the same turn) clears it again.
+      if (produced.deleted === true) review.deleted = true
+      else delete review.deleted
     }
   }
   return reviews
@@ -150,12 +161,17 @@ export function producedForClosing(
   if (data === undefined) return []
   const paths: string[] = []
   const seen = new Set<string>()
+  const lastDeleted = new Map<string, boolean>()
   for (const produced of data.produced) {
-    if (produced.seq > seq || seen.has(produced.path)) continue
+    if (produced.seq > seq) continue
+    lastDeleted.set(produced.path, produced.deleted === true)
+    if (seen.has(produced.path)) continue
     seen.add(produced.path)
     paths.push(produced.path)
   }
-  return paths
+  // Deleted paths carry no openable file; they stay out of the mention
+  // vocabulary even when an earlier write in the same turn recorded them.
+  return paths.filter(path => lastDeleted.get(path) !== true)
 }
 
 /**
@@ -199,11 +215,19 @@ export const deliverablesDefinition: ConversationNodeDefinition<DeliverablesStat
     const callId = String(match.event.data.message.source.callId)
     const callView = context.state.calls.get(callId) ?? null
     const diffs = reviewDiffs(callView, match.view)
-    const additions = producedPaths(callView).map(path => ({
+    const additions: ProducedPath[] = producedPaths(callView).map(path => ({
       seq: match.event.seq,
       path,
       diffs: diffs.filter(diff => diff.path === path),
     }))
+    // dsh deletes files only through the terminals; a successful terminal
+    // call's literal rm-family arguments are the only deletion record there
+    // is (dsh has no delete-file tool). They join the same produced
+    // vocabulary as hunks-bearing paths: no diffs, never undoable.
+    for (const path of callView !== null ? deletedPaths(callView) : []) {
+      if (additions.some(addition => addition.path === path)) continue
+      additions.push({ seq: match.event.seq, path, diffs: [], deleted: true })
+    }
     return additions.length === 0
       ? context.state
       : { ...context.state, produced: [...context.state.produced, ...additions] }

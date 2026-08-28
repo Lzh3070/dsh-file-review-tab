@@ -14,6 +14,8 @@ import type { ProducedFileDiff, RecordedMutation } from '../change-types.ts';
 export interface SessionFileChange {
     readonly path: string;
     readonly diffs: readonly ProducedFileDiff[];
+    /** Terminal commands deleted this path in this turn (display-only). */
+    readonly deleted?: true;
 }
 /** One turn's produced files, in first-seen order. */
 export interface TurnFileChanges {

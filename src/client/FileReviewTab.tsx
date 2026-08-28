@@ -59,6 +59,8 @@ interface FlatChange {
   readonly turn: number
   readonly path: string
   readonly diffs: SessionFileChange['diffs']
+  /** Deleted paths stay listed but never reach the Host inspector. */
+  readonly deleted?: true
 }
 
 /** State map key for one (turn, file) change group. */
@@ -230,8 +232,14 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
   const flat = useMemo<FlatChange[]>(
     () => turns.flatMap(turn => turn.files.map(file => ({
       turn: turn.turn, path: file.path, diffs: file.diffs,
+      ...(file.deleted === true ? { deleted: true as const } : {}),
     }))),
     [turns],
+  )
+  // Deleted entries have nothing to inspect or toggle on the Host side.
+  const inspectable = useMemo(
+    () => flat.filter(item => item.deleted !== true),
+    [flat],
   )
   // Stable content key: the inspect effect re-fires only when the change SET
   // changes, not on every token-flush snapshot identity bump.
@@ -357,13 +365,13 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     const timer = window.setTimeout(() => {
       const request: FileReviewRequest = {
         action: 'undo',
-        files: flat.map(item => ({ path: item.path, diffs: item.diffs })),
+        files: inspectable.map(item => ({ path: item.path, diffs: item.diffs })),
       }
       invoke('status', request).then((result) => {
         if (!active) return
         setStates(() => {
           const next = new Map<string, FileReviewFileState>()
-          flat.forEach((item, index) => {
+          inspectable.forEach((item, index) => {
             const file = result.files[index]
             if (file !== undefined) next.set(stateKey(item.turn, item.path), file.state)
           })
@@ -478,7 +486,7 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
             disabled={statusPending || busyKey !== null || reversible.length === 0}
             title={reversible.length === 0 ? t('toggleUnavailable') : undefined}
             onClick={() => {
-              runToggle(turnKey, turn.files.map(file => ({
+              runToggle(turnKey, turn.files.filter(file => file.deleted !== true).map(file => ({
                 turn: turn.turn, path: file.path, diffs: file.diffs,
               })), turnAction)
             }}
@@ -530,23 +538,29 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
         >
           <Chevron open={isOpen} />
           <span className={css.fileName}>{basename(file.path)}</span>
-          <Stats stats={stats} />
-          <StateBadge state={state} />
-          <button
-            type="button"
-            className={css.smallButton}
-            onClick={(event) => {
-              event.stopPropagation()
-              openInEditor(file.path)
-            }}
-          >
-            {t('openInEditor')}
-          </button>
+          {file.deleted === true
+            ? <span className={css.deletedBadge}>{t('deleted')}</span>
+            : <Stats stats={stats} />}
+          {file.deleted !== true && <StateBadge state={state} />}
+          {file.deleted !== true && (
+            <button
+              type="button"
+              className={css.smallButton}
+              onClick={(event) => {
+                event.stopPropagation()
+                openInEditor(file.path)
+              }}
+            >
+              {t('openInEditor')}
+            </button>
+          )}
           <button
             type="button"
             className={css.smallButton}
             disabled={statusPending || busyKey !== null || !reversible}
-            title={!reversible ? t('toggleUnavailable') : undefined}
+            title={file.deleted === true
+              ? t('deletedHint')
+              : (!reversible ? t('toggleUnavailable') : undefined)}
             onClick={(event) => {
               event.stopPropagation()
               runToggle(key, [{ turn: turn.turn, path: file.path, diffs: file.diffs }], fileAction)
@@ -560,9 +574,11 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
         {isOpen && (
           <div className={css.diffWrap}>
             <LazyDiff>
-              {file.diffs.length === 0
-                ? <p className={css.diffUnavailable}>{t('unavailable')}</p>
-                : (
+              {file.deleted === true
+                ? <p className={css.diffUnavailable}>{t('deletedHint')}</p>
+                : file.diffs.length === 0
+                  ? <p className={css.diffUnavailable}>{t('unavailable')}</p>
+                  : (
                   <UnifiedDiff
                     diffs={file.diffs}
                     contextLines={3}

@@ -587,3 +587,12 @@
   from { transform: translateX(20px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+
+.deletedBadge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
+  white-space: nowrap;
+}
