@@ -59,6 +59,20 @@ export declare function deriveSessionRoots(snapshot: ConversationSnapshot): Sess
 export declare function mergeRecordedTurns(turns: readonly TurnFileChanges[], roots: readonly SessionRoot[], recorded: readonly RecordedMutation[]): readonly TurnFileChanges[];
 /** Count distinct changed paths across every turn (the sidebar badge count). */
 export declare function countChangedFiles(turns: readonly TurnFileChanges[]): number;
+/**
+ * Turns that stay in the review tab's MAIN list: the newest
+ * {@link ARCHIVE_KEEP_TURNS} turns plus every live (still-running) turn.
+ * Older completed turns auto-archive to the tab's bottom section (issue #5:
+ * long sessions accumulate dozens of diff groups and weigh the page down).
+ */
+export declare const ARCHIVE_KEEP_TURNS = 5;
+/** Archived turns render this many groups per loaded page once the section opens. */
+export declare const ARCHIVE_PAGE_TURNS = 10;
+/** Split turns into the main list and the auto-archived tail (both newest-first). */
+export declare function splitArchivedTurns(turns: readonly TurnFileChanges[], keep?: number): {
+    main: readonly TurnFileChanges[];
+    archived: readonly TurnFileChanges[];
+};
 /** Trailing path segment, the part that identifies the file at a glance. */
 export declare function basename(path: string): string;
 /** Resolve a (possibly relative) tool path against the session cwd. */

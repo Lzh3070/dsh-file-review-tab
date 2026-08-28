@@ -17,8 +17,9 @@ import type {
   RecordedMutation, RecordedRequest, RecordedResult,
 } from '../change-types.ts'
 import {
-  basename, deriveSessionChanges, deriveSessionRoots, mergeRecordedTurns,
-  resolveSessionPath, type SessionFileChange, type TurnFileChanges,
+  ARCHIVE_PAGE_TURNS, basename, deriveSessionChanges, deriveSessionRoots,
+  mergeRecordedTurns, resolveSessionPath, splitArchivedTurns,
+  type SessionFileChange, type TurnFileChanges,
 } from './session-changes.ts'
 import { summarizeDiffs, UnifiedDiff, type UnifiedDiffStats } from './UnifiedDiff.tsx'
 import { t } from './locales.ts'
@@ -229,12 +230,61 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     () => mergeRecordedTurns(deriveSessionChanges(snapshot), roots, recorded),
     [snapshot, roots, recorded],
   )
+  // Auto-archive (issue #5): only the newest turns stay in the main list;
+  // older completed turns collapse into the tab's bottom section, which
+  // renders nothing until opened and then only ARCHIVE_PAGE_TURNS groups
+  // per loaded page — long sessions no longer mount dozens of diff groups.
+  const { main: mainTurns, archived: archivedTurns } = useMemo(
+    () => splitArchivedTurns(turns),
+    [turns],
+  )
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const [archivePages, setArchivePages] = useState(1)
+  // Archive UI state persists per session, so reopening a long session
+  // doesn't re-mount everything the user already collapsed away.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(`dsh-file-review-tab:archive:${sessionId}`)
+      const parsed = raw === null ? undefined : JSON.parse(raw) as { open?: unknown; pages?: unknown }
+      setArchiveOpen(parsed?.open === true)
+      setArchivePages(
+        typeof parsed?.pages === 'number' && Number.isInteger(parsed.pages) && parsed.pages >= 1
+          ? parsed.pages
+          : 1,
+      )
+    } catch {
+      setArchiveOpen(false)
+      setArchivePages(1)
+    }
+  }, [sessionId])
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        `dsh-file-review-tab:archive:${sessionId}`,
+        JSON.stringify({ open: archiveOpen, pages: archivePages }),
+      )
+    } catch {
+      // Storage unavailable (private mode &c.): archive state stays in-memory.
+    }
+  }, [sessionId, archiveOpen, archivePages])
+  // Collapsed ⇒ nothing from the archive mounts; open ⇒ the loaded pages only.
+  const archivedVisible = useMemo(
+    () => (archiveOpen
+      ? archivedTurns.slice(0, archivePages * ARCHIVE_PAGE_TURNS)
+      : []),
+    [archiveOpen, archivePages, archivedTurns],
+  )
+  const archivedRemaining = archivedTurns.length - archivedVisible.length
+  const renderedTurns = useMemo(
+    () => [...mainTurns, ...archivedVisible],
+    [mainTurns, archivedVisible],
+  )
   const flat = useMemo<FlatChange[]>(
-    () => turns.flatMap(turn => turn.files.map(file => ({
+    () => renderedTurns.flatMap(turn => turn.files.map(file => ({
       turn: turn.turn, path: file.path, diffs: file.diffs,
       ...(file.deleted === true ? { deleted: true as const } : {}),
     }))),
-    [turns],
+    [renderedTurns],
   )
   // Deleted entries have nothing to inspect or toggle on the Host side.
   const inspectable = useMemo(
@@ -249,6 +299,10 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
   )
   const flatRef = useRef(flat)
   flatRef.current = flat
+  const turnsRef = useRef(turns)
+  turnsRef.current = turns
+  const archivedTurnsRef = useRef(archivedTurns)
+  archivedTurnsRef.current = archivedTurns
 
   // Deep-link plumbing: file-row elements by stateKey and turn-group sections
   // by turn number for scrollIntoView, the last replayed meta reference, and a
@@ -276,6 +330,20 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
     if (paths.length === 0) return
     const turnNo = (meta as { turn?: unknown }).turn
     const targetTurn = typeof turnNo === 'number' && Number.isInteger(turnNo) ? turnNo : undefined
+    // A link into an auto-archived turn must first make that turn render:
+    // open the archive section and page to the owning group. The rows then
+    // mount, flatKey re-arms, and the pending scroll below lands on them.
+    const ownerTurn = targetTurn !== undefined
+      ? turnsRef.current.find(turn => turn.turn === targetTurn)
+      : turnsRef.current.find(turn => turn.files.some(file => paths.includes(file.path)))
+    if (ownerTurn !== undefined && ownerTurn.live !== true) {
+      const archivedIndex = archivedTurnsRef.current.findIndex(turn => turn.turn === ownerTurn.turn)
+      if (archivedIndex !== -1) {
+        setArchiveOpen(true)
+        setArchivePages((current) =>
+          Math.max(current, Math.ceil((archivedIndex + 1) / ARCHIVE_PAGE_TURNS)))
+      }
+    }
     // With a turn anchor only THAT turn's rows expand — a path that recurs in
     // other turns stays collapsed there; without one, every occurrence expands
     // (legacy meta shape).
@@ -637,7 +705,43 @@ export function FileReviewTab({ ctx, sessionId, cwd, visible, tab }: FileReviewT
       <div className={css.body} ref={bodyRef}>
         {turns.length === 0
           ? <div className={css.empty}>{t('empty')}</div>
-          : [...turns].reverse().map(renderTurn)}
+          : (
+            <>
+              {mainTurns.map(renderTurn)}
+              {archivedTurns.length > 0 && (
+                <div className={css.archiveSection}>
+                  <button
+                    type="button"
+                    className={css.archiveHeader}
+                    aria-expanded={archiveOpen}
+                    aria-label={archiveOpen ? t('archivedCollapse') : t('archivedExpand')}
+                    onClick={() => { setArchiveOpen(current => !current) }}
+                  >
+                    <Chevron open={archiveOpen} />
+                    <span className={css.archiveTitle}>
+                      {t('archived', { n: String(archivedTurns.length) })}
+                    </span>
+                  </button>
+                  {/* Collapsed ⇒ zero archived groups mount (issue #5); open ⇒
+                      only the loaded pages render, each diff row still lazy. */}
+                  {archiveOpen && (
+                    <>
+                      {archivedVisible.map(renderTurn)}
+                      {archivedRemaining > 0 && (
+                        <button
+                          type="button"
+                          className={css.archiveLoadMore}
+                          onClick={() => { setArchivePages(current => current + 1) }}
+                        >
+                          {t('loadMore', { n: String(archivedRemaining) })}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </>
+          )}
       </div>
     </div>
   )

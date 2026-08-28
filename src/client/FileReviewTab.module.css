@@ -313,3 +313,37 @@
     display: none;
   }
 }
+
+/* Auto-archive tail (issue #5): older completed turns collapse into this
+   bottom section; collapsed renders nothing but the header. */
+.archiveSection {
+  margin: 4px 8px 6px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 10px;
+}
+
+.archiveHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 8px 0 10px;
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  border: 0;
+}
+
+.archiveHeader:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.archiveTitle {
+  font-size: 12px;
+}
+
+.archiveSection .turnGroup {
+  /* Nested groups drop the card chrome inside the archive box. */
+  margin: 0 8px 8px;
+}

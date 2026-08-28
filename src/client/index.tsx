@@ -33,7 +33,7 @@ import { attachLocale, en, LOCALE_NS, t, zh } from './locales.ts'
 import {
   en as chatEn, NS as CHAT_NS, zh as chatZh, type DeliverablesKey,
 } from './chat-locales.ts'
-import { countChangedFiles, deriveSessionChanges } from './session-changes.ts'
+import { countChangedFiles, deriveSessionChanges, splitArchivedTurns } from './session-changes.ts'
 import {
   deliverablesDefinition, producedFileMentions, selectProducedFiles,
 } from './turn-deliverables.ts'
@@ -113,7 +113,10 @@ function badgeCount(ctx: Context, sessionId: string): number | null {
   const fingerprint = snapshotFingerprint(snapshot)
   const hit = badgeMemo.get(sessionId)
   if (hit !== undefined && hit.fingerprint === fingerprint) return hit.count
-  const count = countChangedFiles(deriveSessionChanges(snapshot))
+  // The badge counts the MAIN list only — auto-archived turns already read
+  // their review and left the tab's active section (issue #5).
+  const { main } = splitArchivedTurns(deriveSessionChanges(snapshot))
+  const count = countChangedFiles(main)
   const value = count === 0 ? null : count
   badgeMemo.set(sessionId, { fingerprint, count: value })
   return value

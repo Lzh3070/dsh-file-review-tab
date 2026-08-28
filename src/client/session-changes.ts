@@ -279,6 +279,52 @@ export function countChangedFiles(turns: readonly TurnFileChanges[]): number {
   return paths.size
 }
 
+/**
+ * Turns that stay in the review tab's MAIN list: the newest
+ * {@link ARCHIVE_KEEP_TURNS} turns plus every live (still-running) turn.
+ * Older completed turns auto-archive to the tab's bottom section (issue #5:
+ * long sessions accumulate dozens of diff groups and weigh the page down).
+ */
+export const ARCHIVE_KEEP_TURNS = 5
+
+/** Archived turns render this many groups per loaded page once the section opens. */
+export const ARCHIVE_PAGE_TURNS = 10
+
+/**
+ * Debug/demo override for the keep threshold: `?frtArchiveKeep=N` in the app
+ * URL forces N (0 archives every completed turn) so the archive UI can be
+ * exercised on sessions with few change-bearing turns. Null when absent.
+ */
+function archiveKeepOverride(): number | null {
+  try {
+    const param = new URLSearchParams(window.location.search).get('frtArchiveKeep')
+    if (param === null) return null
+    const value = Number(param)
+    if (Number.isInteger(value) && value >= 0) return value
+  } catch {
+    // Non-browser context (tests): no override.
+  }
+  return null
+}
+
+/** Split turns into the main list and the auto-archived tail (both newest-first). */
+export function splitArchivedTurns(
+  turns: readonly TurnFileChanges[],
+  keep = ARCHIVE_KEEP_TURNS,
+): { main: readonly TurnFileChanges[]; archived: readonly TurnFileChanges[] } {
+  const effective = archiveKeepOverride() ?? keep
+  const descending = [...turns].sort((left, right) => right.turn - left.turn)
+  const kept = new Set(descending.slice(0, effective).map(turn => turn.turn))
+  const main: TurnFileChanges[] = []
+  const archived: TurnFileChanges[] = []
+  for (const turn of descending) {
+    // A live turn never archives, however old its number is.
+    if (turn.live || kept.has(turn.turn)) main.push(turn)
+    else archived.push(turn)
+  }
+  return { main, archived }
+}
+
 /** Trailing path segment, the part that identifies the file at a glance. */
 export function basename(path: string): string {
   const at = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
