@@ -13,6 +13,7 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ProducedFileDiff, RecordedMutation } from '../change-types.ts'
 import { deletedPaths } from './deleted-paths.ts'
+import { normalizeSnapshot } from './snapshot-compat.ts'
 import { diffsFromBeforeAfter } from './recorded-diffs.ts'
 
 /** One changed file inside one turn, hunks appended in settlement order. */
@@ -100,9 +101,10 @@ function reviewDiffs(node: ToolResultNode): readonly ProducedFileDiff[] {
  * or the next turn number when nothing live is observable).
  */
 function turnAttribution(snapshot: ConversationSnapshot): (seq: number) => { turn: number; live: boolean } {
-  const ends = [...snapshot.turnEnds.entries()].sort((a, b) => a[1] - b[1])
-  const liveTurn = snapshot.partial?.turn
-    ?? snapshot.runningCalls[0]?.turn
+  const view = normalizeSnapshot(snapshot)
+  const ends = [...(view?.turnEnds.entries() ?? [])].sort((a, b) => a[1] - b[1])
+  const liveTurn = view?.partial?.turn
+    ?? view?.runningCalls[0]?.turn
     ?? ((ends.at(-1)?.[0] ?? 0) + 1)
   return (seq: number) => {
     for (const [turn, endSeq] of ends) {
@@ -116,7 +118,8 @@ function turnAttribution(snapshot: ConversationSnapshot): (seq: number) => { tur
 function derive(snapshot: ConversationSnapshot): TurnFileChanges[] {
   const attribute = turnAttribution(snapshot)
   const byTurn = new Map<number, { live: boolean; files: Map<string, FileAccumulator> }>()
-  for (const node of snapshot.nodes) {
+  const view = normalizeSnapshot(snapshot)
+  for (const node of (view?.nodes ?? []) as readonly ToolResultNode[]) {
     if (node.kind !== 'tool-result' || node.isError) continue
     const paths = producedPaths(node.callView)
     // dsh has no delete-file tool: deletions happen in the terminals, and a
@@ -192,7 +195,8 @@ export interface SessionRoot {
 export function deriveSessionRoots(snapshot: ConversationSnapshot): SessionRoot[] {
   const attribute = turnAttribution(snapshot)
   const roots: SessionRoot[] = []
-  for (const node of snapshot.nodes) {
+  const view = normalizeSnapshot(snapshot)
+  for (const node of (view?.nodes ?? []) as readonly ToolResultNode[]) {
     if (node.kind !== 'tool-result' || node.isError) continue
     if (node.subCalls.length === 0) continue
     const { turn, live } = attribute(node.seq)

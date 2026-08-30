@@ -29,6 +29,7 @@ import type { FileReviewRequest, FileReviewResult } from '../change-types.ts'
 import { TYPERT_REMOTE } from '../remote.ts'
 import { FileReviewTab } from './FileReviewTab.tsx'
 import { ProducedFiles } from './ProducedFiles.tsx'
+import { normalizeSnapshot } from './snapshot-compat.ts'
 import { attachLocale, en, LOCALE_NS, t, zh } from './locales.ts'
 import {
   en as chatEn, NS as CHAT_NS, zh as chatZh, type DeliverablesKey,
@@ -99,9 +100,11 @@ const badgeMemo = new Map<string, { fingerprint: string; count: number | null }>
 
 function snapshotFingerprint(snapshot: ConversationSnapshot | null): string {
   if (snapshot === null) return 'none'
+  const view = normalizeSnapshot(snapshot)
+  if (view === undefined) return 'none'
   let lastEnd = 0
-  for (const endSeq of snapshot.turnEnds.values()) lastEnd = endSeq
-  return `${snapshot.nodes.length}:${snapshot.turnEnds.size}:${lastEnd}`
+  for (const endSeq of view.turnEnds.values()) lastEnd = endSeq
+  return `${view.nodes.length}:${view.turnEnds.size}:${lastEnd}`
 }
 
 function badgeCount(ctx: Context, sessionId: string): number | null {
